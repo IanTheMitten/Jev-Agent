@@ -1714,6 +1714,7 @@ function buildOptimisticSession(
     model: created.info?.model ?? null,
     output_tokens: 0,
     parent_session_id: parentSessionId,
+    ...(parentSessionId ? { _branched_from: parentSessionId } : {}),
     preview,
     profile: profileKey,
     source: 'tui',
