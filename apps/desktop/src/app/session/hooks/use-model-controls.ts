@@ -7,7 +7,7 @@ import { getGlobalModelInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { isBusySessionModelSwitch } from '@/lib/gateway-rpc'
 import { surfaceModelSwitchConfirm } from '@/lib/guarded-model-switch'
-import { modelOptionsQueryKey } from '@/lib/model-options'
+import { moaPickRemoved, modelOptionsQueryKey, requestModelOptions } from '@/lib/model-options'
 import { notifyError } from '@/store/notifications'
 import { $activeGatewayProfile } from '@/store/profile'
 import {
@@ -127,10 +127,17 @@ export function useModelControls({
 
       // A manual pick is sticky. It is never diffed against the catalog: rows
       // are hints, and a custom slug the row lacks is still the user's choice
-      // (the gateway validates it on switch).
-      const keepManualPick = () => !force && Boolean($currentModel.get()) && getCurrentModelSource() === 'manual'
+      // (the gateway validates it on switch). ONE exception, narrower than a
+      // catalog diff: a pick pointing at the virtual `moa` provider, whose row
+      // the catalog omits entirely once no preset is enabled — that absence is
+      // authoritative, and without the exception the pill reads
+      // `Model · moa: default` forever (#90244).
+      const manualPick = () => Boolean($currentModel.get()) && getCurrentModelSource() === 'manual'
 
-      if (keepManualPick()) {
+      const staleMoaPick = () =>
+        !force && manualPick() && ($currentProvider.get() || '').trim().toLowerCase() === 'moa'
+
+      if (manualPick() && !force && !staleMoaPick()) {
         return
       }
 
@@ -138,13 +145,40 @@ export function useModelControls({
       // that lands while getGlobalModelInfo is in flight wins over this older
       // default — value comparisons alone miss re-selecting the same row.
       const selectionGeneration = getComposerSelectionGeneration()
+
+      // Judge the moa pick against the catalog: peek the picker's own cache
+      // first and only fetch (deduped with the in-flight UI query) when it is
+      // empty, so the pill reseeds even before the chat view mounts its query.
+      // A catalog that fails to load keeps the pick — absence of data is not
+      // absence of the preset.
+      let reseedStaleMoa = false
+
+      if (staleMoaPick()) {
+        const catalogProfile = cacheProfile || profile
+        const catalogKey = modelOptionsQueryKey(catalogProfile, null, cacheOwnerConnectionId)
+
+        const catalog =
+          queryClient.getQueryData<ModelOptionsResult>(catalogKey) ??
+          (await queryClient.fetchQuery({
+            queryKey: catalogKey,
+            queryFn: (): Promise<ModelOptionsResult> =>
+              requestModelOptions({ profile: catalogProfile, request: requestGateway })
+          }))
+
+        reseedStaleMoa = moaPickRemoved(catalog, 'moa', $currentModel.get())
+
+        if (!reseedStaleMoa) {
+          return
+        }
+      }
+
       const result = await getGlobalModelInfo(profile)
 
       if (
         profileRefreshEpochRef.current !== profileRefreshEpoch ||
         $activeSessionId.get() ||
         getComposerSelectionGeneration() !== selectionGeneration ||
-        keepManualPick()
+        (manualPick() && !force && !reseedStaleMoa)
       ) {
         return
       }
@@ -163,7 +197,7 @@ export function useModelControls({
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
     }
-  }, [])
+  }, [cacheOwnerConnectionId, cacheProfile, queryClient, requestGateway])
 
   // Returns whether the switch was applied so callers can await it before
   // applying follow-up changes. `true` means applied (or deferred/busy-queued
