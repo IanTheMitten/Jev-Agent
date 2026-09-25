@@ -10,10 +10,10 @@ import { sessionMessagesSignature } from '@/lib/session-signatures'
 import { latestSessionTodos } from '@/lib/todos'
 import { pendingSessionReplay } from '@/store/gateway'
 import { $sidebarShowArchived } from '@/store/layout'
-import { $changeEventsAvailable, $cronChangeTick, $sessionsChangeTick } from '@/store/live-sync'
+import { $changeEventsAvailable, $cronChangeTick, $projectsChangeTick, $sessionsChangeTick } from '@/store/live-sync'
 import { $onBattery, batteryPollInterval } from '@/store/power'
 import { refreshActiveProfile } from '@/store/profile'
-import { refreshProjectTree } from '@/store/projects'
+import { refreshProjectTree, refreshProjects } from '@/store/projects'
 import {
   $activeSessionId,
   $busy,
@@ -826,6 +826,7 @@ export function useBackgroundSync({
 }: BackgroundSyncParams): void {
   const changeEventsAvailable = useStore($changeEventsAvailable)
   const cronChangeTick = useStore($cronChangeTick)
+  const projectsChangeTick = useStore($projectsChangeTick)
   const activeTranscriptRefreshPendingRef = useRef<string | null>(null)
   const activeTranscriptReadRef = useRef<{ sessionKey: string; preservePending: boolean } | null>(null)
   // Tile reconcile state (#93942 slice 1): shared sequence guard + per-tile
@@ -1186,6 +1187,30 @@ export function useBackgroundSync({
       () => void refreshCronJobs()
     )
   }, [changeEventsAvailable, cronChangeTick, gatewayState, refreshCronJobs])
+
+  // projects.changed (projects.db moved: a CLI `hermes projects create`, another
+  // window's folder picker, a `set_primary` from the workspace settings) refreshes
+  // both the projects list and the sidebar tree — the desktop's own mutations
+  // refresh optimistically, so this only needs to cover writers in OTHER
+  // processes, exactly the sessions.changed contract (#53046, #56757). The
+  // refreshes keep the cached atoms on failure, so an older backend that never
+  // broadcasts costs nothing. Subscribed (not mount-read) so a tick that landed
+  // before this hook mounted — a stale value from a previous connection —
+  // doesn't fire a refresh into a wiped store.
+  useEffect(() => {
+    if (gatewayState !== 'open') {
+      return
+    }
+
+    return $projectsChangeTick.listen(tick => {
+      if (tick <= 0) {
+        return
+      }
+
+      void refreshProjects()
+      void refreshProjectTree()
+    })
+  }, [gatewayState])
 
   // Preserve the pre-existing messaging behavior: refresh once when a
   // messaging transcript opens, then keep its visibility backstop. Desktop
