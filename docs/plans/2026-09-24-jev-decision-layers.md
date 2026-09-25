@@ -203,7 +203,7 @@ Four sites that already ask an LLM for a fixed label. Their files are disjoint, 
 Tasks 7-10 fan out.
 
 ### Task 6: Author Tier A site tests, red [test]
-- [ ] status
+- [x] status
 **Objective:** A red suite pinning each Tier A site's Jev branch and, in its own file, the rule that no approval failure yields `approve`.
 **Write-scope:** `tests/test_jev_approval_safety.py` (new)
 `tests/test_jev_sites_tier_a.py` (new)
