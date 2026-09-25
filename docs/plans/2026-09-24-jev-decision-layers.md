@@ -396,7 +396,7 @@ files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 **Why:** The fork this guards is a full `AIAgent` replaying the conversation on the main model, triggered today by a blind turn counter. The counter stays as the rate limit; Jev answers the question the counter cannot.
 
 ### Task 13: Gate Honcho recall and resolve the reasoning level in one request
-- [ ] status
+- [x] status
 **Objective:** One Jev request inside the Honcho worker thread decides whether the dialectic runs and at what reasoning bump.
 **Write-scope:** `plugins/memory/honcho/__init__.py`
 **Read-context:** `plugins/memory/honcho/__init__.py:919-960` — the cadence gate, `_run`, the thread start
@@ -422,8 +422,26 @@ files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 **Depends:** Task 11
 **Why:** The cadence counter is a good rate limit and a poor relevance judge, so Jev is consulted only after it fires. Both questions key off the same fixed query and resolve once per run, so they share one round trip.
 
+### Task 13a: Route the Honcho reasoning-level tests through the single recall round trip [mechanical]
+- [x] status
+**Objective:** Make the reasoning-level tests exercise the combined `honcho_recall_gate` call in `queue_prefetch`'s worker thread, not a direct `_run_dialectic_depth` call that the depth-one bail-out test requires to be Jev-free.
+**Write-scope:** `tests/test_jev_gates.py`
+**Read-context:** `tests/test_jev_gates.py:294-413` (`_honcho_provider`, `_HONCHO_RECALL_SCENARIOS`, the recall and reasoning tests); `tests/test_jev_gates.py:424-497` (the bail-out tests, including `test_honcho_bailout_never_consults_jev_at_depth_one`); `agent/jev_decide.py:53-60` (`Decision.confident` / `_answer_confidence`)
+**Anchors:** `def test_honcho_reasoning_level_confident_bump(monkeypatch, score, expected_level):` @ `tests/test_jev_gates.py:379`; `def test_honcho_reasoning_level_unconfident_matches_char_heuristic(monkeypatch):` @ `tests/test_jev_gates.py:396`; `_HONCHO_RECALL_SCENARIOS = {` @ `tests/test_jev_gates.py:317`
+**Steps:**
+1. Above line 378, add a helper `def _recall_yes_with_level(score, confidence):` returning `Decision(ok=True, answers={"recall_worth_it": JevAnswer(name="recall_worth_it", type="noul", noul=0.9), "reasoning_level": JevAnswer(name="reasoning_level", type="score", score=score, confidence=confidence)}, status="ok", min_confidence=0.6)`.
+2. In `test_honcho_reasoning_level_confident_bump`, set `mock_decide = MagicMock(return_value=_recall_yes_with_level(score, 0.9))`. Replace `provider._run_dialectic_depth("short query", use_query_rewrite=False)` with `provider.queue_prefetch("short query")`, then `if provider._prefetch_thread is not None: provider._prefetch_thread.join(timeout=2.0)`. Keep both assertions unchanged.
+3. In `test_honcho_reasoning_level_unconfident_matches_char_heuristic`, set `mock_decide = MagicMock(return_value=_recall_yes_with_level(2, 0.1))`. Replace `provider._run_dialectic_depth(query, use_query_rewrite=False)` with the same `queue_prefetch(query)` + join. Keep `expected_level` and both assertions unchanged.
+4. Rename the placeholder answer key `"g"` (both the dict key and `name=`) to `"recall_worth_it"` at lines 319, 324 and 329. Rename it to `"sufficiency"` at lines 427, 445, 463 and 486.
+5. Do not touch `test_honcho_bailout_never_consults_jev_at_depth_one`'s assertions, or lines 91-105 and 207-217.
+**New symbols:** `_recall_yes_with_level(score, confidence) -> Decision` (test helper).
+**Verify:** `.venv/bin/python -m pytest tests/test_jev_gates.py -q -k "recall or reasoning or depth_one" && .venv/bin/python -m pytest tests/honcho_plugin/ -q` — expected: 10 passed in the first run, 0 failures in the second.
+**Forbidden:** do not edit `plugins/memory/honcho/__init__.py`. Do not call `_run_dialectic_depth` directly in the reasoning tests. Do not relax any `call_count` assertion.
+**Depends:** Task 11
+**Why:** The single-round-trip design resolves the reasoning bump in `_run`, so the only real place to observe Jev choosing the level is `queue_prefetch`. A direct `_run_dialectic_depth` call at depth 1 must stay Jev-free, which the depth-one bail-out test and Task 14 both require. (Oracle fast-lane CONFIRMED, agent a5e3394edb118ec56: Task 11's reasoning-level tests call `_run_dialectic_depth` directly at depth=1 and expect a Jev call, but the depth-one bail-out test in the same file expects zero calls for that same call — contradiction unsatisfiable without breaking the single-round-trip design.)
+
 ### Task 14: Replace the dialectic bail-out heuristic at its call site
-- [ ] status
+- [x] status
 **Objective:** The between-pass bail-out asks Jev how well the previous pass answered the query, falling back to `_signal_sufficient` whenever Jev is unavailable or unsure.
 **Write-scope:** `plugins/memory/honcho/__init__.py`
 **Read-context:** `plugins/memory/honcho/__init__.py:1119-1137` — the heuristic being fronted
@@ -446,7 +464,7 @@ files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 **Why:** Fronting the heuristic at its one call site gets the better judgement without touching a staticmethod three committed assertions depend on — the same call-site placement Decision 1 chose everywhere else.
 
 ### Task 15: Gate the curator review fork
-- [ ] status
+- [x] status
 **Objective:** The curator's forked `AIAgent` runs only when Jev judges some candidate actionable, and still runs whenever Jev is unavailable or unsure.
 **Write-scope:** `agent/curator.py`
 **Read-context:** `agent/curator.py:1641-1682` — the candidate list, the empty check, and the fork
@@ -468,12 +486,27 @@ files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 **Depends:** Task 11
 **Why:** The fork is a full `AIAgent` on the main model, so gating it is the largest single saving in the plan for operators who enabled consolidation. Jev never decides a candidate's fate, only whether the existing decider runs.
 
+### Task 15a: Fix curator-gate fixture answer key [mechanical]
+- [x] status
+**Objective:** Key `_CURATOR_SCENARIOS` answers by the real question name `"actionable"` so the "confident + below threshold ⇒ skip" branch can be tested.
+**Write-scope:** `tests/test_jev_gates.py`
+**Read-context:** `tests/test_jev_gates.py:205-224`; `agent/jev_decide.py:53-54`
+**Anchors:** `_CURATOR_SCENARIOS = {` @ `tests/test_jev_gates.py:205`
+**Steps:**
+1. On lines 207, 212 and 217 only, replace `answers={"g": JevAnswer(name="g", type="noul", noul=X)}` with `answers={"actionable": JevAnswer(name="actionable", type="noul", noul=X)}`. Keep each X as it is (0.9, 0.1, 0.55).
+2. Change nothing else. Leave lines 91-105, 319-329 and 427-486 alone.
+**New symbols:** none.
+**Verify:** `.venv/bin/python -m pytest tests/test_jev_gates.py -q -k curator` — expected: 6 passed, 0 failed.
+**Forbidden:** do not edit `agent/curator.py`, the other scenario dicts, or the expected run counts.
+**Depends:** Task 11
+**Why:** The committed contract has to be able to reach the skip branch. Otherwise `confident_no` can never pass, and the other three cases pass only because "run the review" is the default. (Oracle fast-lane CONFIRMED, agent a0e1c61269e7e8ba9: Task 11's red-suite fixtures used a placeholder answer key `"g"` instead of each gate's real question name, and `Decision.confident(name)` requires that key present, so no gate can take its "skip" branch under test.)
+
 ---
 
 ## Phase 4 — Configuration surface
 
 ### Task 16: Document and exemplify the Jev configuration [docs]
-- [ ] status
+- [x] status
 **Objective:** An operator can turn any of the nine sites on, understand what each one sends off-host, and cut everything with one key.
 **Write-scope:** `cli-config.yaml.example`
 `docs/jev-decision-layers.md` (new)
