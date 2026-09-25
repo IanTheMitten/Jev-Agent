@@ -1,3 +1,5 @@
+> **Jev-Agent** is a fork of [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) that adds a decision layer named Jev: a small auxiliary model consulted at gate points across the agent (approval, curator, memory recall, kanban estimation, goal judging) so those calls degrade to safe defaults instead of blocking on the main model. See [`docs/jev-decision-layers.md`](docs/jev-decision-layers.md) for the full design.
+
 <p align="center">
   <img src="assets/banner.png" alt="Hermes Agent" width="100%">
 </p>
