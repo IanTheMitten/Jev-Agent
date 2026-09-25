@@ -937,8 +937,40 @@ class HonchoMemoryProvider(MemoryProvider):
         _fired_at = self._turn_count
 
         def _run():
+            from agent.jev_client import noul_question, score_question
+            from agent.jev_decide import decide
+
+            d = decide(
+                "honcho_recall_gate",
+                state={
+                    "query": query[:2000],
+                    "turns_since_last_recall": self._turn_count - self._last_dialectic_turn,
+                    "last_recall_was_empty": self._dialectic_empty_streak > 0,
+                },
+                questions={
+                    "recall_worth_it": noul_question(
+                        "Would stored knowledge about this user change how this "
+                        "message should be answered?"
+                    ),
+                    "reasoning_level": score_question(
+                        "How much reasoning does answering this message from "
+                        "stored user context require?",
+                        self._REASONING_RUBRIC,
+                    ),
+                },
+                require_ack="i_understand_memory_content_leaves_host",
+            )
+            if d.ok and d.confident("recall_worth_it") and d.answers["recall_worth_it"].noul < 0.5:
+                # Consume the cadence window without counting an empty recall.
+                self._last_dialectic_turn = _fired_at
+                return
+
+            level_bump = (
+                round(d.answers["reasoning_level"].score)
+                if d.ok and d.confident("reasoning_level") else None
+            )
             try:
-                result = self._run_dialectic_depth(query)
+                result = self._run_dialectic_depth(query, level_bump=level_bump)
             except Exception as e:
                 logger.debug("Honcho prefetch failed: %s", e)
                 self._dialectic_empty_streak += 1
@@ -977,6 +1009,14 @@ class HonchoMemoryProvider(MemoryProvider):
     }
 
     _LEVEL_ORDER = ("minimal", "low", "medium", "high", "max")
+
+    # Score-question rubric for the Jev-resolved reasoning bump, index-aligned
+    # to the 0/1/2 bump _apply_reasoning_heuristic already produces.
+    _REASONING_RUBRIC = [
+        "a direct lookup needing no extra reasoning",
+        "some extra reasoning",
+        "substantial extra reasoning",
+    ]
 
     # Char-count thresholds for the query-length reasoning heuristic.
     _HEURISTIC_LENGTH_MEDIUM = 120
@@ -1059,14 +1099,17 @@ class HonchoMemoryProvider(MemoryProvider):
         cap_idx = self._LEVEL_ORDER.index(self._reasoning_level_cap)
         return self._LEVEL_ORDER[min(base_idx + bump, cap_idx)]
 
-    def _resolve_pass_level(self, pass_idx: int, query: str = "") -> str:
+    def _resolve_pass_level(
+        self, pass_idx: int, query: str = "", *, level_bump: int | None = None
+    ) -> str:
         """Resolve reasoning level for a given pass index.
 
         Precedence:
           1. dialecticDepthLevels (explicit per-pass) — wins absolutely
           2. _PROPORTIONAL_LEVELS table (depth>1 lighter-early passes)
-          3. Base level = dialecticReasoningLevel, optionally scaled by the
-             reasoning heuristic when the mapping falls through to 'base'
+          3. Base level = dialecticReasoningLevel, optionally scaled by
+             ``level_bump`` (Jev-resolved) or else the char-count reasoning
+             heuristic, when the mapping falls through to 'base'
         """
         if self._dialectic_depth_levels and pass_idx < len(self._dialectic_depth_levels):
             return self._dialectic_depth_levels[pass_idx]
@@ -1074,6 +1117,10 @@ class HonchoMemoryProvider(MemoryProvider):
         base = (self._config.dialectic_reasoning_level if self._config else "low")
         mapping = self._PROPORTIONAL_LEVELS.get((self._dialectic_depth, pass_idx))
         if mapping is None or mapping == "base":
+            if level_bump is not None and base in self._LEVEL_ORDER:
+                base_idx = self._LEVEL_ORDER.index(base)
+                cap_idx = self._LEVEL_ORDER.index(self._reasoning_level_cap)
+                return self._LEVEL_ORDER[min(base_idx + level_bump, cap_idx)]
             return self._apply_reasoning_heuristic(base, query)
         return mapping
 
@@ -1136,7 +1183,39 @@ class HonchoMemoryProvider(MemoryProvider):
         # Long enough even without structure
         return len(result.strip()) > 300
 
-    def _run_dialectic_depth(self, query: str, *, use_query_rewrite: bool = True) -> str:
+    # Score-question rubric for the Jev-judged between-pass bail-out, index 0-4.
+    _SUFFICIENCY_RUBRIC = [
+        "no useful signal",
+        "generic filler that could describe anyone",
+        "touches the query but thin on specifics",
+        "useful and specific to this user",
+        "thorough and directly answers the query",
+    ]
+
+    def _pass_sufficient(self, result: str, query: str) -> bool:
+        """Ask Jev whether a pass answered the query; fall back to the heuristic."""
+        from agent.jev_client import score_question
+        from agent.jev_decide import decide
+
+        d = decide(
+            "honcho_dialectic_bailout",
+            state={"query": query[:2000], "result": result[:4000]},
+            questions={
+                "sufficiency": score_question(
+                    "How well does this answer the query with specific detail "
+                    "about this user?",
+                    self._SUFFICIENCY_RUBRIC,
+                )
+            },
+            require_ack="i_understand_memory_content_leaves_host",
+        )
+        if d.ok and d.confident("sufficiency"):
+            return round(d.answers["sufficiency"].score) >= 3
+        return self._signal_sufficient(result)
+
+    def _run_dialectic_depth(
+        self, query: str, *, use_query_rewrite: bool = True, level_bump: int | None = None
+    ) -> str:
         """Execute up to dialecticDepth .chat() calls with conditional bail-out.
 
         Cold start (no base context): general user-oriented query.
@@ -1165,7 +1244,7 @@ class HonchoMemoryProvider(MemoryProvider):
                 )
             else:
                 # Skip further passes if prior pass delivered strong signal
-                if prior_results and self._signal_sufficient(prior_results[-1]):
+                if prior_results and self._pass_sufficient(prior_results[-1], query):
                     logger.debug("Honcho dialectic depth %d: pass %d skipped, prior signal sufficient",
                                  self._dialectic_depth, i)
                     break
@@ -1179,7 +1258,7 @@ class HonchoMemoryProvider(MemoryProvider):
                 else:
                     prompt = self._build_dialectic_prompt(i, prior_results, is_cold)
 
-            level = self._resolve_pass_level(i, query=query)
+            level = self._resolve_pass_level(i, query=query, level_bump=level_bump)
             logger.debug("Honcho dialectic depth %d: pass %d, level=%s, cold=%s",
                          self._dialectic_depth, i, level, is_cold)
 
