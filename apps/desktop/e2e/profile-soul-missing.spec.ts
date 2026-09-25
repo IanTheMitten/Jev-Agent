@@ -1,7 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { setupMockBackend, waitForAppReady, writeMockProviderConfig } from './fixtures'
+import { writeMockProviderConfig } from '../../../tests-js/scripts/mock-provider-config'
+
+import { setupMockBackend, waitForAppReady } from './fixtures'
 import { expect, test } from './test'
 
 test('both SOUL editors explain a missing file and save it without changing personality config', async () => {
