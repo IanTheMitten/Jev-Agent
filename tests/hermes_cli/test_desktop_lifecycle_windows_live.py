@@ -28,7 +28,7 @@ import pytest
 
 from tests.live_process_fixtures import SLEEPER_MARKER, sleeper_script_path
 
-pytestmark = pytest.mark.windows_only
+pytestmark = pytest.mark.platforms("windows")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
