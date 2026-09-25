@@ -374,7 +374,7 @@ files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 **Why:** The two fork gates point opposite ways on uncertainty by design (spec `:143`), which is exactly the kind of asymmetry a later edit flattens. The off-path file exists because C6 is the constraint most easily broken by someone tidying a gate upward into `queue_prefetch`.
 
 ### Task 12: Gate the background memory/skill review fork
-- [ ] status
+- [x] status
 **Objective:** The fork at `agent/turn_finalizer.py:716` runs only when Jev judges the turn to have produced durable knowledge, or when Jev is unavailable and today's counters already fired.
 **Write-scope:** `agent/turn_finalizer.py`
 **Read-context:** `agent/turn_finalizer.py:698-724` — the skill counter and the spawn
