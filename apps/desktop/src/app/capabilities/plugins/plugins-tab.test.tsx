@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $pluginRecords } from '@/contrib/plugins-store'
+import { $pluginDecisions, $pluginRecords, dropPlugin, patchPlugin, publishPlugin } from '@/contrib/plugins-store'
 import { queryClient } from '@/lib/query-client'
 import { $agentPlugins, $agentPluginsStatus } from '@/store/agent-plugins'
 import { $confirmRequest, settleConfirm } from '@/store/confirm'
+import { $notifications } from '@/store/notifications'
 import { $paneHeightOverride, setPaneHeightOverride } from '@/store/panes'
 import { $pluginInstallRequest, closePluginInstallRequest } from '@/store/plugin-install-request'
 import { $connection } from '@/store/session'
@@ -36,11 +37,13 @@ vi.mock('@/contrib/runtime-loader', async importOriginal => ({
 
 // #96969: a Desktop switch whose feature also ships an agent toolset must
 // reach the same PUT /api/tools/toolsets/{name} the Toolsets tab uses.
-const setToolsetEnabled = vi.fn(async () => ({ enabled: true, name: 'kanban', ok: true }))
+const setToolsetEnabled = vi.fn(async (..._args: unknown[]) => ({ enabled: true, name: 'kanban', ok: true }))
+const getToolsets = vi.fn(async (..._args: unknown[]): Promise<{ enabled: boolean; name: string }[]> => [])
 
 vi.mock('@/api/toolsets', async importOriginal => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  setToolsetEnabled: (...args: unknown[]) => setToolsetEnabled(...(args as Parameters<typeof setToolsetEnabled>))
+  getToolsets: (...args: unknown[]) => getToolsets(...args),
+  setToolsetEnabled: (...args: unknown[]) => setToolsetEnabled(...args)
 }))
 
 describe('PluginsTab', () => {
@@ -50,7 +53,10 @@ describe('PluginsTab', () => {
     $agentPluginsStatus.set('ready')
     closePluginInstallRequest()
     requestGateway.mockClear()
-    setToolsetEnabled.mockClear()
+    setToolsetEnabled.mockReset()
+    setToolsetEnabled.mockResolvedValue({ enabled: true, name: 'kanban', ok: true })
+    getToolsets.mockReset()
+    getToolsets.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -326,6 +332,110 @@ describe('PluginsTab', () => {
 
     await waitFor(() => {
       expect(setToolsetEnabled).toHaveBeenCalledWith('kanban', false, 'workbot')
+    })
+  })
+
+  describe('Desktop Kanban switch when the toolset write fails', () => {
+    // A real loader handle, so the switch's `checked` (desktop.status) and the
+    // persisted decision genuinely move when the panel is toggled.
+    const publishKanban = (status: 'disabled' | 'loaded') =>
+      publishPlugin(
+        { id: 'kanban', name: 'Kanban', kind: 'bundled', status },
+        { activate: () => patchPlugin('kanban', { status: 'loaded' }), deactivate: () => undefined }
+      )
+
+    const kanbanSwitch = () => screen.getByRole<HTMLButtonElement>('switch', { name: 'Desktop: Kanban' })
+    const checked = () => kanbanSwitch().getAttribute('aria-checked')
+    const notices = (kind: string) => $notifications.get().filter(n => n.kind === kind)
+    const toolsetReads = (enabled: boolean) => [{ enabled, name: 'kanban' }]
+
+    // Resolves once the write attempt (and any re-read) has settled.
+    const settled = () => waitFor(() => expect(kanbanSwitch().disabled).toBe(false))
+
+    beforeEach(() => {
+      $pluginDecisions.set({})
+      $notifications.set([])
+      window.localStorage.clear()
+    })
+
+    afterEach(() => dropPlugin('kanban'))
+
+    it('keeps panel and tools off when enabling is rejected, then retries', async () => {
+      publishKanban('disabled')
+      setToolsetEnabled.mockRejectedValueOnce(new Error('HTTP 500'))
+      getToolsets.mockResolvedValueOnce(toolsetReads(false))
+
+      render(<PluginsTab profile="workbot" scopeLabel="workbot" />)
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(notices('error')).toHaveLength(1))
+      await settled()
+
+      expect(checked()).toBe('false')
+      expect($pluginRecords.get().kanban.status).toBe('disabled')
+      expect($pluginDecisions.get()).not.toHaveProperty('kanban')
+      expect(window.localStorage.getItem('hermes.desktop.pluginDecisions.v2')).toBeNull()
+      expect(notices('success')).toHaveLength(0)
+
+      // Same intended value again, backend healthy: both halves turn on.
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(checked()).toBe('true'))
+
+      expect(setToolsetEnabled).toHaveBeenLastCalledWith('kanban', true, 'workbot')
+      expect($pluginDecisions.get().kanban).toBe(true)
+      expect(notices('success')).toHaveLength(1)
+    })
+
+    it('keeps panel and tools on when disabling is rejected, then retries', async () => {
+      publishKanban('loaded')
+      setToolsetEnabled.mockRejectedValueOnce(new Error('HTTP 500'))
+      getToolsets.mockResolvedValueOnce(toolsetReads(true))
+
+      render(<PluginsTab profile="workbot" scopeLabel="workbot" />)
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(notices('error')).toHaveLength(1))
+      await settled()
+
+      expect(checked()).toBe('true')
+      expect($pluginRecords.get().kanban.status).toBe('loaded')
+      expect($pluginDecisions.get()).not.toHaveProperty('kanban')
+      expect(notices('success')).toHaveLength(0)
+
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(checked()).toBe('false'))
+
+      expect(setToolsetEnabled).toHaveBeenLastCalledWith('kanban', false, 'workbot')
+      expect($pluginDecisions.get().kanban).toBe(false)
+      expect(notices('success')).toHaveLength(1)
+    })
+
+    it('follows the backend when a timed-out write actually committed', async () => {
+      publishKanban('disabled')
+      setToolsetEnabled.mockRejectedValueOnce(new Error('Request timed out'))
+      getToolsets.mockResolvedValueOnce(toolsetReads(true))
+
+      render(<PluginsTab profile="workbot" scopeLabel="workbot" />)
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(checked()).toBe('true'))
+
+      expect(getToolsets).toHaveBeenCalledWith('workbot')
+      expect($pluginDecisions.get().kanban).toBe(true)
+      expect(notices('error')).toHaveLength(0)
+    })
+
+    it('leaves the panel alone and stays retryable when the outcome is unknown', async () => {
+      publishKanban('loaded')
+      setToolsetEnabled.mockRejectedValueOnce(new Error('Request timed out'))
+      getToolsets.mockRejectedValueOnce(new Error('Request timed out'))
+
+      render(<PluginsTab profile="workbot" scopeLabel="workbot" />)
+      fireEvent.click(kanbanSwitch())
+      await waitFor(() => expect(notices('error')).toHaveLength(1))
+      await settled()
+
+      expect(checked()).toBe('true')
+      expect($pluginRecords.get().kanban.status).toBe('loaded')
+      expect($pluginDecisions.get()).not.toHaveProperty('kanban')
+      expect(notices('success')).toHaveLength(0)
     })
   })
 
