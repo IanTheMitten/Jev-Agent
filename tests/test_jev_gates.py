@@ -88,7 +88,7 @@ def _run_finalize(agent, *, final_response="done", with_tool_use=False):
 
 _REVIEW_SCENARIOS = {
     "confident_yes": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.9)},
+        Decision(ok=True, answers={"durable": JevAnswer(name="durable", type="noul", noul=0.9)},
                  status="ok", min_confidence=0.5),
         1,
     ),
@@ -97,12 +97,12 @@ _REVIEW_SCENARIOS = {
         1,
     ),
     "confident_no": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.1)},
+        Decision(ok=True, answers={"durable": JevAnswer(name="durable", type="noul", noul=0.1)},
                  status="ok", min_confidence=0.5),
         0,
     ),
     "unconfident": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.55)},
+        Decision(ok=True, answers={"durable": JevAnswer(name="durable", type="noul", noul=0.55)},
                  status="ok", min_confidence=0.5),
         0,
     ),
@@ -121,6 +121,22 @@ _REVIEW_SCENARIOS = {
 }
 
 
+def _run_finalize_and_join_gate(agent, **kwargs):
+    """Run finalize_turn, then wait for the off-turn-path review gate thread."""
+    result = _run_finalize(agent, **kwargs)
+    for t in threading.enumerate():
+        if t.name == "bg-review-gate":
+            t.join(timeout=2.0)
+    return result
+
+
+@pytest.fixture(autouse=True)
+def _review_gate_jev_in_play(monkeypatch):
+    # The review gate only dispatches to its Jev thread when the site is
+    # enabled; decide() itself is mocked per test.
+    monkeypatch.setattr("agent.jev_decide.jev_enabled", lambda *a, **k: True)
+
+
 @pytest.mark.parametrize("scenario", sorted(_REVIEW_SCENARIOS))
 def test_review_gate_direction(monkeypatch, scenario):
     decision, expected_spawns = _REVIEW_SCENARIOS[scenario]
@@ -128,7 +144,7 @@ def test_review_gate_direction(monkeypatch, scenario):
     monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
 
     agent = _fire_both_counters(_StubAgent(raise_in=()))
-    _run_finalize(agent)
+    _run_finalize_and_join_gate(agent)
 
     assert mock_decide.call_count == 1, "review gate must consult Jev before spawning"
     assert agent._spawn_background_review.call_count == expected_spawns
@@ -140,7 +156,7 @@ def test_review_gate_state_shape(monkeypatch):
     monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
 
     agent = _fire_both_counters(_StubAgent(raise_in=()))
-    _run_finalize(agent, with_tool_use=True)
+    _run_finalize_and_join_gate(agent, with_tool_use=True)
 
     state = mock_decide.call_args.kwargs["state"]
     assert set(state.keys()) == {"user", "assistant", "tools_used", "iters"}
@@ -204,17 +220,17 @@ def _seed_one_candidate(curator_env):
 
 _CURATOR_SCENARIOS = {
     "confident_yes": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.9)},
+        Decision(ok=True, answers={"actionable": JevAnswer(name="actionable", type="noul", noul=0.9)},
                  status="ok", min_confidence=0.5),
         1,
     ),
     "confident_no": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.1)},
+        Decision(ok=True, answers={"actionable": JevAnswer(name="actionable", type="noul", noul=0.1)},
                  status="ok", min_confidence=0.5),
         0,
     ),
     "unconfident": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.55)},
+        Decision(ok=True, answers={"actionable": JevAnswer(name="actionable", type="noul", noul=0.55)},
                  status="ok", min_confidence=0.5),
         1,
     ),
@@ -316,17 +332,17 @@ _QUERY = "what did we discuss about the roadmap last quarter?"
 
 _HONCHO_RECALL_SCENARIOS = {
     "confident_yes": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.9)},
+        Decision(ok=True, answers={"recall_worth_it": JevAnswer(name="recall_worth_it", type="noul", noul=0.9)},
                  status="ok", min_confidence=0.5),
         1,
     ),
     "confident_no": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.1)},
+        Decision(ok=True, answers={"recall_worth_it": JevAnswer(name="recall_worth_it", type="noul", noul=0.1)},
                  status="ok", min_confidence=0.5),
         0,
     ),
     "unconfident": (
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="noul", noul=0.55)},
+        Decision(ok=True, answers={"recall_worth_it": JevAnswer(name="recall_worth_it", type="noul", noul=0.55)},
                  status="ok", min_confidence=0.5),
         1,
     ),
@@ -372,21 +388,31 @@ def test_honcho_recall_gate_confident_no_advances_cadence_without_reset(monkeypa
     assert provider._dialectic_empty_streak == 3
 
 
+def _recall_yes_with_level(score, confidence):
+    return Decision(
+        ok=True,
+        answers={
+            "recall_worth_it": JevAnswer(name="recall_worth_it", type="noul", noul=0.9),
+            "reasoning_level": JevAnswer(
+                name="reasoning_level", type="score", score=score, confidence=confidence
+            ),
+        },
+        status="ok", min_confidence=0.6,
+    )
+
+
 _HONCHO_LEVEL_SCENARIOS = [(0, "low"), (1, "medium"), (2, "high")]
 
 
 @pytest.mark.parametrize(("score", "expected_level"), _HONCHO_LEVEL_SCENARIOS)
 def test_honcho_reasoning_level_confident_bump(monkeypatch, score, expected_level):
-    decision = Decision(
-        ok=True,
-        answers={"level": JevAnswer(name="level", type="score", score=score, confidence=0.9)},
-        status="ok", min_confidence=0.6,
-    )
-    mock_decide = MagicMock(return_value=decision)
+    mock_decide = MagicMock(return_value=_recall_yes_with_level(score, 0.9))
     monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
 
     provider = _honcho_provider(depth=1)
-    provider._run_dialectic_depth("short query", use_query_rewrite=False)
+    provider.queue_prefetch("short query")
+    if provider._prefetch_thread is not None:
+        provider._prefetch_thread.join(timeout=2.0)
 
     assert mock_decide.call_count == 1, "reasoning level must consult Jev"
     level = provider._manager.dialectic_query.call_args.kwargs.get("reasoning_level")
@@ -394,19 +420,16 @@ def test_honcho_reasoning_level_confident_bump(monkeypatch, score, expected_leve
 
 
 def test_honcho_reasoning_level_unconfident_matches_char_heuristic(monkeypatch):
-    decision = Decision(
-        ok=True,
-        answers={"level": JevAnswer(name="level", type="score", score=2, confidence=0.1)},
-        status="ok", min_confidence=0.6,
-    )
-    mock_decide = MagicMock(return_value=decision)
+    mock_decide = MagicMock(return_value=_recall_yes_with_level(2, 0.1))
     monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
 
     provider = _honcho_provider(depth=1)
     query = "x" * 150  # >=120 chars -> char heuristic bumps "low" by one
     expected_level = provider._apply_reasoning_heuristic("low", query)
 
-    provider._run_dialectic_depth(query, use_query_rewrite=False)
+    provider.queue_prefetch(query)
+    if provider._prefetch_thread is not None:
+        provider._prefetch_thread.join(timeout=2.0)
 
     assert mock_decide.call_count == 1
     level = provider._manager.dialectic_query.call_args.kwargs.get("reasoning_level")
@@ -424,7 +447,7 @@ _STRUCTURED_RESULT = "## Summary\n\n" + ("well-grounded detail " * 10)
 def test_honcho_bailout_confident_high_score_stops_after_first_pass(monkeypatch):
     decision = Decision(
         ok=True,
-        answers={"g": JevAnswer(name="g", type="score", score=3, confidence=0.9)},
+        answers={"sufficiency": JevAnswer(name="sufficiency", type="score", score=3, confidence=0.9)},
         status="ok", min_confidence=0.6,
     )
     mock_decide = MagicMock(return_value=decision)
@@ -442,7 +465,7 @@ def test_honcho_bailout_confident_high_score_stops_after_first_pass(monkeypatch)
 def test_honcho_bailout_confident_low_score_continues(monkeypatch):
     decision = Decision(
         ok=True,
-        answers={"g": JevAnswer(name="g", type="score", score=2, confidence=0.9)},
+        answers={"sufficiency": JevAnswer(name="sufficiency", type="score", score=2, confidence=0.9)},
         status="ok", min_confidence=0.6,
     )
     mock_decide = MagicMock(return_value=decision)
@@ -460,7 +483,7 @@ def test_honcho_bailout_confident_low_score_continues(monkeypatch):
 @pytest.mark.parametrize(
     "decision",
     [
-        Decision(ok=True, answers={"g": JevAnswer(name="g", type="score", score=3, confidence=0.1)},
+        Decision(ok=True, answers={"sufficiency": JevAnswer(name="sufficiency", type="score", score=3, confidence=0.1)},
                  status="ok", min_confidence=0.6),
         Decision(ok=False, answers={}, status="disabled", min_confidence=0.6),
     ],
@@ -483,7 +506,7 @@ def test_honcho_bailout_uncertain_defers_to_signal_sufficient(monkeypatch, decis
 def test_honcho_bailout_never_consults_jev_at_depth_one(monkeypatch):
     mock_decide = MagicMock(return_value=Decision(
         ok=True,
-        answers={"g": JevAnswer(name="g", type="score", score=3, confidence=0.9)},
+        answers={"sufficiency": JevAnswer(name="sufficiency", type="score", score=3, confidence=0.9)},
         status="ok", min_confidence=0.6,
     ))
     monkeypatch.setattr("agent.jev_decide.decide", mock_decide)

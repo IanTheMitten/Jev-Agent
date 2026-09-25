@@ -715,43 +715,37 @@ def finalize_turn(
     # so it never competes with the user's task for model attention.
     if final_response and not interrupted and (_should_review_memory or _should_review_skills):
         try:
-            from agent.jev_client import noul_question
-            from agent.jev_decide import decide
+            from agent.jev_decide import jev_enabled
 
-            tools_used = []
-            for _msg in messages:
-                for _call in (_msg.get("tool_calls") or []):
-                    _name = _call.get("function", {}).get("name")
-                    if _name and _name not in tools_used:
-                        tools_used.append(_name)
-
-            d = decide(
-                "background_review_gate",
-                state={
-                    "user": original_user_message[:2000],
-                    "assistant": final_response[:2000],
-                    "tools_used": tools_used,
-                    "iters": api_call_count,
-                },
-                questions={
-                    "durable": noul_question(
-                        "Did this exchange produce a durable, reusable fact or "
-                        "procedure worth saving to memory or a skill?"
-                    )
-                },
-                require_ack="i_understand_turn_digests_leave_host",
-            )
-
-            _durable = next(iter(d.answers.values()), None)
-            if d.status == "disabled" or (
-                d.ok and _durable is not None
-                and d.confident(_durable.name) and _durable.noul >= 0.5
-            ):
+            messages_snapshot = list(messages)
+            if not jev_enabled("background_review_gate"):
                 agent._spawn_background_review(
-                    messages_snapshot=list(messages),
+                    messages_snapshot=messages_snapshot,
                     review_memory=_should_review_memory,
                     review_skills=_should_review_skills,
                 )
+            else:
+                # Jev is in play: consult it off the turn path so finalize_turn
+                # never waits on the network (C6).
+                import threading
+
+                from tools.thread_context import propagate_context_to_thread
+
+                gate = threading.Thread(
+                    target=propagate_context_to_thread(_run_review_gate),
+                    args=(
+                        agent,
+                        messages_snapshot,
+                        original_user_message,
+                        final_response,
+                        api_call_count,
+                        _should_review_memory,
+                        _should_review_skills,
+                    ),
+                    daemon=True,
+                    name="bg-review-gate",
+                )
+                gate.start()
         except Exception:
             pass  # Background review is best-effort
 
@@ -786,3 +780,54 @@ def finalize_turn(
     agent._turn_received_provider_response = False
 
     return result
+
+
+def _run_review_gate(
+    agent,
+    messages,
+    original_user_message,
+    final_response,
+    api_call_count,
+    review_memory,
+    review_skills,
+):
+    """Ask Jev whether the finished turn is worth a background review fork."""
+    try:
+        from agent.jev_client import noul_question
+        from agent.jev_decide import decide
+
+        tools_used = []
+        for _msg in messages:
+            for _call in (_msg.get("tool_calls") or []):
+                _name = _call.get("function", {}).get("name")
+                if _name and _name not in tools_used:
+                    tools_used.append(_name)
+
+        d = decide(
+            "background_review_gate",
+            state={
+                "user": (original_user_message or "")[:2000],
+                "assistant": (final_response or "")[:2000],
+                "tools_used": tools_used,
+                "iters": api_call_count,
+            },
+            questions={
+                "durable": noul_question(
+                    "Did this exchange produce a durable, reusable fact or "
+                    "procedure worth saving to memory or a skill?"
+                )
+            },
+            require_ack="i_understand_turn_digests_leave_host",
+        )
+
+        # Uncertain policy is skip: only "disabled" or a confident yes spawns.
+        if d.status == "disabled" or (
+            d.ok and d.confident("durable") and d.answers["durable"].noul >= 0.5
+        ):
+            agent._spawn_background_review(
+                messages_snapshot=messages,
+                review_memory=review_memory,
+                review_skills=review_skills,
+            )
+    except Exception:
+        pass  # Background review is best-effort
