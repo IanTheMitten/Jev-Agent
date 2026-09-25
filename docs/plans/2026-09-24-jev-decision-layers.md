@@ -344,7 +344,7 @@ Four gates in front of expensive background work. Tasks 12, 13 and 15 touch disj
 files and fan out; Task 14 follows Task 13 because both edit the Honcho module.
 
 ### Task 11: Author Tier B gate tests and the turn-path guard, red [test]
-- [ ] status
+- [x] status
 **Objective:** A red suite pinning each gate's skip-or-run direction and asserting that no gate blocks the user's turn.
 **Write-scope:** `tests/test_jev_gates.py` (new)
 `tests/test_jev_offpath.py` (new)
