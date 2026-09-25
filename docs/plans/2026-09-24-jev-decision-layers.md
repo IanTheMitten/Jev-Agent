@@ -171,7 +171,7 @@ ground rather than an unproven chain.
 **Why:** These two files are where C4's opt-in and C2's fail-open become assertions. Writing them before the module exists keeps the implementation from defining its own escape hatches.
 
 ### Task 5: Implement `agent/jev_decide.py`
-- [ ] status
+- [x] status
 **Objective:** `decide()` reads config, enforces the kill switch and acknowledgement keys, derives comparable confidence, and never raises.
 **Write-scope:** `agent/jev_decide.py` (new)
 **Read-context:** `tests/test_jev_config.py`, `tests/test_jev_decide.py` (from Task 4) — the committed contract; they win on any disagreement
