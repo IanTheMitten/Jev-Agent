@@ -253,7 +253,7 @@ Tasks 7-10 fan out.
 **Why:** C3 makes this the one site where the safe default and the cheap default coincide, so uncertainty escalates to a human rather than paying for a second opinion. Moving the command into `state` also lifts it out of the instruction channel it shares with the prompt today.
 
 ### Task 8: Route the cron urgency monitor through Jev
-- [ ] status
+- [x] status
 **Objective:** One batched Jev request scores every item, with per-item confidence deciding which items fall back to a single reduced `call_llm`.
 **Write-scope:** `cron/scripts/classify_items.py`
 **Read-context:** `cron/scripts/classify_items.py:144-222` — `main`, the threshold filter, and both output formats

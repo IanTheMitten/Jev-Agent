@@ -79,6 +79,21 @@ def _item_id(item: Dict[str, Any], index: int) -> str:
     return f"item-{index}"
 
 
+_URGENCY_RUBRIC = [
+    "ignore entirely",
+    "noise",
+    "very low",
+    "low",
+    "mildly notable",
+    "notable",
+    "worth a look",
+    "surface to the user",
+    "important",
+    "urgent",
+    "interrupt the user now",
+]
+
+
 _CLASSIFY_INSTRUCTIONS = (
     "You are an urgency classifier for a proactive assistant. You will be given "
     "a numbered list of items and the user's importance criteria. Score EACH "
@@ -157,12 +172,13 @@ def main() -> int:
     # Import here so --help works without the package importable.
     try:
         from agent.auxiliary_client import call_llm
+        from agent.jev_client import score_question
+        from agent.jev_decide import decide
     except Exception as e:  # pragma: no cover - import guard
         _eprint(f"classify_items: cannot import auxiliary client: {e}")
         return 3
 
-    prompt = _build_prompt(items, args.criteria)
-    try:
+    def _classify(prompt: str, n_items: int) -> Dict[int, Dict[str, Any]]:
         resp = call_llm(
             task="monitor",
             messages=[{"role": "user", "content": prompt}],
@@ -172,13 +188,58 @@ def main() -> int:
         content = resp.choices[0].message.content
         if not isinstance(content, str):
             content = str(content) if content else ""
+        return _parse_scores(content, n_items)
+
+    prompt = _build_prompt(items, args.criteria)
+
+    item_views = []
+    for item in items:
+        view = {
+            k: item[k]
+            for k in ("title", "subject", "summary", "text", "body", "from", "sender", "url")
+            if k in item
+        }
+        item_views.append(view if view else item)
+
+    d = decide(
+        "monitor",
+        state={"criteria": args.criteria, "items": item_views},
+        questions={
+            f"item_{i}": score_question(
+                "How urgent is this item against the user's criteria?", _URGENCY_RUBRIC
+            )
+            for i in range(len(items))
+        },
+    )
+
+    try:
+        if d.status == "disabled":
+            scores = _classify(prompt, len(items))
+        else:
+            scores = {}
+            fallback_indices = [
+                i for i in range(len(items)) if not d.confident(f"item_{i}")
+            ]
+            for i in range(len(items)):
+                if d.confident(f"item_{i}"):
+                    answer = d.answers[f"item_{i}"]
+                    score = round(answer.score)
+                    legend = answer.legend or {}
+                    reason = legend.get(str(score), legend.get(score))
+                    scores[i] = {"index": i, "score": score, "reason": reason}
+            if fallback_indices:
+                fallback_items = [items[i] for i in fallback_indices]
+                fallback_prompt = _build_prompt(fallback_items, args.criteria)
+                fallback_scores = _classify(fallback_prompt, len(fallback_items))
+                for local_i, orig_i in enumerate(fallback_indices):
+                    if local_i in fallback_scores:
+                        scores[orig_i] = fallback_scores[local_i]
     except Exception as e:
         # Classification failure is NOT silent -- surface it so a broken monitor
         # doesn't quietly swallow important items. Non-zero exit -> cron alerts.
         _eprint(f"classify_items: classifier call failed: {e}")
         return 4
 
-    scores = _parse_scores(content, len(items))
     surfaced = []
     for i, item in enumerate(items):
         s = scores.get(i)
