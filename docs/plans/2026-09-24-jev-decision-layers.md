@@ -78,7 +78,7 @@ The whole plan hangs off two new modules. Phase 1 proves the external API first
 ground rather than an unproven chain.
 
 ### Task 1: Record real `/v1/systemone` responses and confirm the hand-ported contract [experiment]
-- [ ] status
+- [x] status
 **Objective:** One live request carrying all three question types returns a parseable body, and its exact JSON is saved as the fixtures every later test replays.
 **Write-scope:** `scripts/jev_record_fixtures.py` (new)
 `tests/fixtures/jev/systemone_all_types.json` (new)

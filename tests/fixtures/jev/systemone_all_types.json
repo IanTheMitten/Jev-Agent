@@ -1,0 +1,42 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "verdict": {
+      "type": "choice",
+      "choice": "deny",
+      "confidence": 0.13,
+      "probabilities": {
+        "deny": 0.42,
+        "approve": 0.36,
+        "escalate": 0.22
+      }
+    },
+    "risky": {
+      "type": "noul",
+      "noul": 0.83
+    },
+    "severity": {
+      "type": "score",
+      "score": 1.69,
+      "confidence": 0.29,
+      "legend": {
+        "0": "harmless",
+        "1": "minor",
+        "2": "moderate",
+        "3": "serious",
+        "4": "catastrophic"
+      },
+      "probabilities": {
+        "0": 0.08,
+        "1": 0.39,
+        "2": 0.3,
+        "3": 0.21,
+        "4": 0.02
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 425,
+    "output_tokens": 72
+  }
+}
