@@ -1,6 +1,6 @@
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { reachablePreviewUrl } from '@/lib/preview-reach'
-import { openPreview } from '@/store/preview'
+import { openPreview, renderedHtmlTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
 
 /**
@@ -20,9 +20,9 @@ export async function openAgentPreview(target: string, label?: string, cwd?: str
   const url = resolved.kind === 'url' ? await reachablePreviewUrl(resolved.url) : resolved.url
   const reached = url === resolved.url ? resolved : { ...resolved, label: resolved.label || target, url }
   const trimmedLabel = label?.trim()
-  const opened = trimmedLabel ? { ...reached, label: trimmedLabel } : reached
+  const opened = renderedHtmlTarget(trimmedLabel ? { ...reached, label: trimmedLabel } : reached)
 
-  openPreview(opened, 'tool-result')
+  openPreview(opened)
 
   return opened
 }
