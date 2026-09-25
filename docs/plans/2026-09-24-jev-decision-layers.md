@@ -275,7 +275,7 @@ Tasks 7-10 fan out.
 **Why:** This site already batches every monitored item into one call on every cron fire, and the `questions` map makes the same batching native to Jev. The rubric becomes explicit here, which is more than the current prompt supplies.
 
 ### Task 9: Route the goal judge verdict through Jev
-- [ ] status
+- [x] status
 **Objective:** `judge_goal` resolves verdict, wait target, and wait duration in one Jev request, leaving `draft_contract` untouched.
 **Write-scope:** `hermes_cli/goals.py`
 **Read-context:** `hermes_cli/goals.py:1096-1124` — the call, the parse, and the 5-tuple return

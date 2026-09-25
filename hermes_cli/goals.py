@@ -74,6 +74,16 @@ DEFAULT_MAX_CONSECUTIVE_PARSE_FAILURES = 3
 # A broken/invalid API key returns 401 every call — the loop must not
 # run until the turn budget, wasting every turn on an unreachable judge.
 DEFAULT_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 5
+# Wait-duration buckets for the Jev goal_judge "wait_seconds" score question —
+# index-aligned with _WAIT_RUBRIC below.
+_WAIT_BUCKETS = [5, 15, 30, 60, 300]
+_WAIT_RUBRIC = [
+    "a few seconds",
+    "about fifteen seconds",
+    "about thirty seconds",
+    "about a minute",
+    "several minutes",
+]
 
 # Quality gates: deterministic shell commands that must pass before the goal
 # judge may declare the goal done. Defaults mirror the bounded-autonomy
@@ -1092,6 +1102,59 @@ def judge_goal(
             background_block=background_block,
             current_time=current_time,
         )
+
+    from agent.jev_client import choice_question, score_question
+    from agent.jev_decide import decide
+
+    running = [
+        p
+        for p in (background_processes or [])
+        if isinstance(p, dict) and p.get("status") != "exited" and p.get("pid")
+    ]
+    jev_questions: Dict[str, Any] = {
+        "verdict": choice_question(
+            "Has the goal been achieved, should work continue, or should the loop wait on something?",
+            {
+                "done": "the goal is achieved",
+                "continue": "more work is needed now",
+                "wait": "progress depends on a background process or elapsed time",
+            },
+        ),
+        "wait_seconds": score_question(
+            "If waiting, how long should the loop wait?", _WAIT_RUBRIC
+        ),
+    }
+    if running:
+        jev_questions["wait_target"] = choice_question(
+            "Which background process should the loop wait on?",
+            {
+                str(p["pid"]): _truncate(str(p.get("command") or ""), 120)
+                for p in running
+            },
+        )
+
+    d = decide(
+        "goal_judge",
+        state={
+            "goal": _truncate(goal, 2000),
+            "last_response": _truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
+            "background": background_block,
+            "current_time": current_time,
+        },
+        questions=jev_questions,
+    )
+
+    if d.status != "disabled" and d.confident("verdict"):
+        jev_verdict = d.answers["verdict"].choice
+        if jev_verdict in ("done", "continue"):
+            return jev_verdict, f"jev: {jev_verdict}", False, None, False
+        if jev_verdict == "wait":
+            if d.confident("wait_target"):
+                pid = int(d.answers["wait_target"].choice)
+                return "wait", "jev: wait", False, {"pid": pid}, False
+            if d.confident("wait_seconds"):
+                bucket = _WAIT_BUCKETS[round(d.answers["wait_seconds"].score)]
+                return "wait", "jev: wait", False, {"seconds": bucket}, False
 
     try:
         # Route through call_llm so auxiliary.goal_judge.* config
