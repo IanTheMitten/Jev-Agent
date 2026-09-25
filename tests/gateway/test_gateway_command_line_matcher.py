@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from gateway.status import (
+    gateway_spawn_intent_subcommand as spawn_intent,
     looks_like_gateway_command_line as matches,
     looks_like_gateway_runtime_command_line as matches_runtime,
 )
@@ -80,5 +81,35 @@ INLINE_SOURCE_REJECT = [
 def test_rejects_interpreter_running_inline_source(cmd):
     assert matches(cmd) is False
     assert matches_runtime(cmd) is False
+
+
+# Spawn INTENT is the mirror image of process identity: the same wrapper that must not be read as a
+# live gateway MUST still be recognised as "launching this eventually produces a gateway runtime".
+# tests/_fixtures/live_system_guard.py relies on it — without this, the autouse guard stopped
+# blocking the detached restart watcher and real gateways leaked out of the test run.
+@pytest.mark.parametrize("cmd", INLINE_SOURCE_REJECT)
+def test_spawn_intent_sees_through_the_inline_source_wrapper(cmd):
+    assert spawn_intent(cmd) == "run"
+
+
+@pytest.mark.parametrize("cmd", ACCEPT)
+def test_spawn_intent_matches_plain_gateway_run(cmd):
+    assert spawn_intent(cmd) == "run"
+
+
+@pytest.mark.parametrize("cmd", REJECT)
+def test_spawn_intent_rejects_non_gateway_commands(cmd):
+    assert spawn_intent(cmd) != "run"
+
+
+def test_spawn_intent_keeps_read_only_subcommands_spawnable():
+    """The guard only blocks run/start/restart; a ``-c``-wrapped ``gateway status`` must stay
+    launchable (tests/test_live_system_guard_self_test.py asserts it passes through)."""
+    cmd = 'python -c "import sys; print(sys.argv[1:])" -m hermes_cli.main gateway status'
+    assert spawn_intent(cmd) == "status"
+
+
+def test_spawn_intent_ignores_inline_source_without_a_gateway_argv():
+    assert spawn_intent('python -c "import time; time.sleep(1)" 14980') is None
 
 

@@ -604,6 +604,39 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
     return None
 
 
+def gateway_spawn_intent_subcommand(command: str | None) -> str | None:
+    """Gateway lifecycle subcommand a command line would EVENTUALLY launch, or None.
+
+    The identity matcher (``_gateway_command_subcommand``) deliberately refuses ``python -c <src>
+    …``: the trailing argv is the inline program's data, not that process's own identity (#107002).
+    Callers that inspect a command line as SPAWN INTENT — "if I launch this, does a gateway runtime
+    eventually appear?" — need the opposite answer, because
+    ``gateway._spawn_gateway_restart_watcher`` hides a real ``… -m hermes_cli.main gateway run``
+    behind exactly that wrapper. ``tests/_fixtures/live_system_guard.py`` is the canonical caller.
+
+    Still no substring matching: the wrapper is peeled token-wise and each remaining suffix is
+    handed to the same canonical matcher.
+    """
+    direct = _gateway_command_subcommand(command)
+    if direct is not None or not command:
+        return direct
+    try:
+        raw_tokens = shlex.split(command, posix=False)
+    except ValueError:
+        raw_tokens = command.split()
+    tokens = [t.strip("\"'").replace("\\", "/").lower() for t in raw_tokens]
+    if not command_line_runs_inline_source(tokens):
+        return None
+    # Skip the interpreter, its options, ``-c`` and the source literal; then try every suffix —
+    # the embedded argv starts at an unknown offset (the watcher prefixes it with the old PID).
+    start = next(i for i, t in enumerate(tokens[1:], start=1) if _INLINE_SOURCE_FLAG_RE.fullmatch(t)) + 2
+    for i in range(start, len(tokens)):
+        nested = _gateway_command_subcommand(" ".join(raw_tokens[i:]))
+        if nested is not None:
+            return nested
+    return None
+
+
 def looks_like_gateway_command_line(command: str | None) -> bool:
     """True only for a real ``gateway run`` process command line."""
     return _gateway_command_subcommand(command) == "run"
