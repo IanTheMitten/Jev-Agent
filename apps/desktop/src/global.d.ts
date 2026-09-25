@@ -235,6 +235,17 @@ declare global {
         libraryRename: (target: string, nextName: string) => Promise<null | string>
         reveal: (target: string) => Promise<void>
         onEvent: (callback: (payload: { event: string; payload: unknown }) => void) => () => void
+        import: {
+          pick: (guestId: number, active: boolean) => Promise<void>
+          hover: (guestId: number, selector: null | string) => Promise<void>
+          hoverPathEntry: (guestId: number, index: null | number) => Promise<void>
+          select: (guestId: number, selector: string) => Promise<PenImportPick | undefined>
+          selectPathEntry: (guestId: number, index: number) => Promise<void>
+          run: (guestId: number, options?: PenImportOptions) => Promise<PenImportResult>
+          onPicker: (callback: (payload: { guestId: number; state: null | PenImportPickerState }) => void) => () => void
+          onAction: (callback: (payload: { action: 'import' | 'screenshot'; guestId: number }) => void) => () => void
+          onProgress: (callback: (payload: { fraction: number; guestId: number }) => void) => () => void
+        }
       }
       getConnectionConfig: (profile?: null | string) => Promise<DesktopConnectionConfig>
       saveConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>
@@ -1275,6 +1286,40 @@ export interface PenOpenResult {
 export interface PenToolResult {
   success: boolean
   result?: unknown
+  error?: string
+}
+
+/** A picked element on a preview page — pen.dev's `BrowserViewPick`, the parts the strip shows. */
+export interface PenImportPick {
+  element: {
+    tag: string
+    width: number
+    height: number
+    /** DevTools-style descriptor, e.g. `div#hero.container.flex`. */
+    label?: string
+    selector?: string
+    componentName?: string
+  }
+  /** Ancestor chain, outermost first; `pathIndex` is the live selection. */
+  path: Array<{ label: string; componentName?: string }>
+  pathIndex: number
+}
+
+/** `pick` undefined: the crosshair is up, waiting for a click. */
+export interface PenImportPickerState {
+  pick: PenImportPick | undefined
+}
+
+export interface PenImportOptions {
+  mode?: 'page' | 'selection'
+  selector?: string
+}
+
+export interface PenImportResult {
+  success: boolean
+  imported?: 'page' | 'selection'
+  element?: string
+  warnings?: string[]
   error?: string
 }
 

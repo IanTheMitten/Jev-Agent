@@ -127,10 +127,20 @@ PEN_CANVAS_SCHEMA = {
         "'close' puts the canvas away (file stays in the library). "
         "'schema' re-fetches the editor's live MCP tool list (get-mcp-schema) "
         "— call it when tools look stale; Pencil changes them. "
-        "open already returns that list. Any other action is an editor tool "
+        "open already returns that list. "
+        "'import' brings a live web page onto the canvas as editable layers "
+        "(args: {url?, selector?: one element by CSS selector, else the whole "
+        "page}) — it loads url in the desktop's preview browser (or uses the "
+        "page already open there), opens a canvas named after the page if this "
+        "chat has none, and imports. Reach for it whenever the user wants a "
+        "website, landing page or UI component copied, cloned, traced or "
+        "recreated as a design / mockup / wireframe / Figma-style file, or "
+        "asks to redesign an existing site: offer 'I can import it to the "
+        "canvas' even if no canvas is open. "
+        "Any other action is an editor tool "
         "from that list, forwarded verbatim. Workflow: open → use the "
         "returned tools → edit in small steps. If no Canvas tab is open, "
-        "call open first."
+        "call open first (import opens one itself)."
     ),
     "parameters": {
         "type": "object",
@@ -139,14 +149,17 @@ PEN_CANVAS_SCHEMA = {
                 "type": "string",
                 "description": (
                     "'open' or 'close' for the pane, 'schema' for the live "
-                    "MCP tool list; any other string is an editor tool name "
-                    "from that list."
+                    "MCP tool list, 'import' to bring a web page onto the "
+                    "canvas; any other string is an editor tool name from "
+                    "that list."
                 ),
             },
             "args": {
                 "type": "object",
                 "description": (
                     "Arguments for the action, passed to the editor verbatim. "
+                    "For import: {url?: page to load first, selector?: CSS "
+                    "selector of the one element to import}. "
                     "Omit when the action needs none."
                 ),
             },

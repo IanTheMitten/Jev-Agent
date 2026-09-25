@@ -77,6 +77,7 @@ import {
   SIDEBAR_MAX_WIDTH
 } from '@/store/layout'
 import { $penLibraryOpen, openPenCanvas, openPenLibrary, watchPenSession } from '@/store/pen'
+import { watchPenImport } from '@/store/pen-import'
 import { $profileRailVisible } from '@/store/profile-rail-prefs'
 import { runExportProfileFlow, runImportProfileFlow } from '@/store/profile-share'
 import {
@@ -511,6 +512,7 @@ if (!isBrowserWindow() && !isHudWindow()) {
 
 watchCanvasTiles()
 watchPenSession()
+watchPenImport()
 
 // Mirror sidebar pins into the backend keep-flag so the auto-archive sweep
 // never hides a pinned chat (and pre-existing pins migrate transparently).

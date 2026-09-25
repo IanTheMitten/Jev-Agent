@@ -29,6 +29,7 @@ import {
 } from './sessions'
 import { onPenEvent } from './state'
 import { attachPenWebGuest, rebindPenWebGuest, runPenTool } from './web-bridge'
+import { wirePenImportIpc } from './web-import'
 
 const penDocSessions = new Map<string, string>()
 
@@ -244,4 +245,5 @@ function wirePenIpc(): void {
 export function wirePenCanvas(opts: { preloadPath: string }): void {
   wirePenWebviewGuests(opts)
   wirePenIpc()
+  wirePenImportIpc()
 }

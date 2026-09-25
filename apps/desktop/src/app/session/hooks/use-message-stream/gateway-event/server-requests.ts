@@ -1,5 +1,6 @@
 import { readActivePreview } from '@/app/chat/right-rail/preview-reader'
 import { readActiveTerminal } from '@/app/right-sidebar/terminal/buffer'
+import { openAgentPreview } from '@/app/session/hooks/open-agent-preview'
 import { pendingClarifyToolPayload } from '@/app/session/hooks/use-session-actions/restore-pending-clarify'
 import { translateNow } from '@/i18n'
 import { restorePendingClarifyToolCall } from '@/lib/chat-messages'
@@ -9,6 +10,7 @@ import { normalizeChoices, normalizeQuestions, setClarifyRequest, warnDroppedCho
 import type { ScopedServerRequest } from '@/store/gateway'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { openPenCanvas, runPenTool } from '@/store/pen'
+import { importActivePreviewToCanvas } from '@/store/pen-import'
 import {
   receiveApprovalRequest,
   setSecretRequest,
@@ -455,7 +457,24 @@ const penTool: Handler = ({ request, sessionId }) => {
             success: true,
             result: { closed: true }
           }))
-        : runPenTool(action, args)
+        : action === 'import'
+          ? importActivePreviewToCanvas(
+              {
+                mode: args.mode === 'page' || args.mode === 'selection' ? args.mode : undefined,
+                selector: typeof args.selector === 'string' && args.selector.trim() ? args.selector.trim() : undefined,
+                url: typeof args.url === 'string' && args.url.trim() ? args.url.trim() : undefined
+              },
+              sessionId || null,
+              async url => {
+                if (!(await openAgentPreview(url))) {
+                  throw new Error(`the preview pane cannot open ${url}`)
+                }
+              }
+            ).then(
+              ({ error, imported, success, url }) => ({ success, result: { imported, url }, error }),
+              (error: unknown) => ({ success: false, error: error instanceof Error ? error.message : String(error) })
+            )
+          : runPenTool(action, args)
 
   void run.then(
     result => answerValue(request, result),

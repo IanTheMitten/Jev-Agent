@@ -2657,6 +2657,12 @@ export interface Translations {
       done: string
       doneTip: string
       openFailed: string
+      importWeb: string
+      importWebTip: string
+      importWorking: string
+      importDone: string
+      importDoneTip: string
+      importFailed: string
     }
     githubSuggestions: {
       label: string
@@ -3339,6 +3345,18 @@ export interface Translations {
 
   pen: {
     openFailed: string
+    /** Import from the web — the preview strip's control and its status. */
+    import: string
+    importPicking: string
+    importPickHint: string
+    importPage: string
+    importSelection: string
+    importCancel: string
+    importing: string
+    importProgress: (percent: number) => string
+    imported: string
+    importedElement: (label: string) => string
+    importFailed: string
   }
 
   preview: {

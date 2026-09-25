@@ -262,6 +262,34 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       ipcRenderer.on('hermes:pen:event', listener)
 
       return () => ipcRenderer.removeListener('hermes:pen:event', listener)
+    },
+    // Import from the web: pen.dev's capturer runs in main against the
+    // preview <webview> guest, named by webContents id.
+    import: {
+      pick: (guestId, active) => ipcRenderer.invoke('hermes:pen:import:pick', guestId, active),
+      hover: (guestId, selector) => ipcRenderer.invoke('hermes:pen:import:hover', guestId, selector),
+      hoverPathEntry: (guestId, index) => ipcRenderer.invoke('hermes:pen:import:hover-path', guestId, index),
+      select: (guestId, selector) => ipcRenderer.invoke('hermes:pen:import:select', guestId, selector),
+      selectPathEntry: (guestId, index) => ipcRenderer.invoke('hermes:pen:import:path', guestId, index),
+      run: (guestId, options) => ipcRenderer.invoke('hermes:pen:import:run', guestId, options),
+      onPicker: callback => {
+        const listener = (_event, payload) => callback(payload)
+        ipcRenderer.on('hermes:pen:import:picker', listener)
+
+        return () => ipcRenderer.removeListener('hermes:pen:import:picker', listener)
+      },
+      onAction: callback => {
+        const listener = (_event, payload) => callback(payload)
+        ipcRenderer.on('hermes:pen:import:action', listener)
+
+        return () => ipcRenderer.removeListener('hermes:pen:import:action', listener)
+      },
+      onProgress: callback => {
+        const listener = (_event, payload) => callback(payload)
+        ipcRenderer.on('hermes:pen:import:progress', listener)
+
+        return () => ipcRenderer.removeListener('hermes:pen:import:progress', listener)
+      }
     }
   },
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),

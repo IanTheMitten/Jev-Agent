@@ -9,7 +9,8 @@
 //     storage-load / storage-write / storage-{read,write,has}-asset, backed
 //     by the document's .pen file + an assets/ folder beside it.
 //   - embedder → editor requests are the MCP surface: get-mcp-schema (live
-//     tool list, fetched on open / action=schema) and mcp-tool-call.
+//     tool list, fetched on open / action=schema) and mcp-tool-call — plus
+//     browser-import, which drops a web capture onto the canvas (web-import.ts).
 //
 // One canvas at a time, so one live bridge.
 
@@ -392,6 +393,15 @@ export async function runPenTool(
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** Drop a `PenCapturer.capture()` payload onto the canvas — pen.dev's paste-from-the-web. */
+export async function importPenBrowserCapture(payload: string): Promise<{ success: boolean }> {
+  await waitForPenReady()
+
+  const result = (await bridgeRequest('browser-import', payload)) as { success?: boolean } | undefined
+
+  return { success: result?.success === true }
 }
 
 export function shutdownPenWebBridge(): void {

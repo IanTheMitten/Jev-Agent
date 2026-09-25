@@ -3076,7 +3076,13 @@ export const en: Translations = {
       workingTip: 'Click to cancel',
       done: 'Canvas open',
       doneTip: 'Design away — Hermes can draw on it too',
-      openFailed: 'Could not open the canvas'
+      openFailed: 'Could not open the canvas',
+      importWeb: 'Import {name} to canvas',
+      importWebTip: 'Bring the live page onto a pen.dev canvas as editable layers',
+      importWorking: 'Importing…',
+      importDone: 'Imported',
+      importDoneTip: 'The page is on the canvas — Hermes can work on it too',
+      importFailed: 'Could not import the page'
     },
     githubSuggestions: {
       label: 'Set up GitHub',
@@ -3819,7 +3825,18 @@ export const en: Translations = {
   },
 
   pen: {
-    openFailed: 'Could not open the canvas'
+    openFailed: 'Could not open the canvas',
+    import: 'Import to canvas',
+    importPicking: 'Stop picking',
+    importPickHint: 'Click an element · Enter imports · Esc stops',
+    importPage: 'Whole page',
+    importSelection: 'Import',
+    importCancel: 'Cancel',
+    importing: 'Importing to the canvas…',
+    importProgress: percent => `Capturing… ${percent}%`,
+    imported: 'Page imported to the canvas',
+    importedElement: label => `Imported ${label} to the canvas`,
+    importFailed: 'Could not import to the canvas'
   },
 
   preview: {

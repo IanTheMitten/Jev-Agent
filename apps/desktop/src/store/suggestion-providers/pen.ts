@@ -1,7 +1,11 @@
+import { activePreviewImport } from '@/app/chat/right-rail/preview-import'
+import { openAgentPreview } from '@/app/session/hooks/open-agent-preview'
 import { getAllSessionMessages } from '@/hermes'
 import { translateNow } from '@/i18n'
+import { type WebImportIntent, webImportIntent } from '@/lib/pen-web-import-intent'
 import { type ComposerSuggestion, offerSuggestions, registerDraftProvider } from '@/store/composer-suggestions'
 import { openPenCanvas, refreshPenStatus } from '@/store/pen'
+import { importActivePreviewToCanvas } from '@/store/pen-import'
 import { $activeSessionId, $selectedStoredSessionId } from '@/store/session'
 
 const STATUS_TTL_MS = 30_000
@@ -77,6 +81,7 @@ function openFileSuggestion(): ComposerSuggestion {
       const paths = await window.hermesDesktop?.selectPaths({
         filters: [{ extensions: ['pen'], name: 'Pen Design Files' }]
       })
+
       const file = paths?.[0]
 
       if (!file || cancelled()) {
@@ -99,7 +104,45 @@ function openFileSuggestion(): ComposerSuggestion {
   }
 }
 
+/** Import-from-the-web intent against the page the preview pane is showing right now. */
+export function webImportTrigger(text: string): null | WebImportIntent {
+  return webImportIntent(text, activePreviewImport()?.handle.page().url)
+}
+
+function importWebSuggestion(target: WebImportIntent): ComposerSuggestion {
+  return {
+    doneLabel: copy('importDone'),
+    doneTip: copy('importDoneTip'),
+    icon: 'inspect',
+    id: `import-web:${target.url ?? 'active'}`,
+    invoke: async ({ cancelled, sessionId }) => {
+      const result = await importActivePreviewToCanvas({ url: target.url }, sessionId ?? null, async url => {
+        if (!(await openAgentPreview(url))) {
+          throw new Error(copy('importFailed'))
+        }
+      })
+
+      if (!result.success && !cancelled()) {
+        throw new Error(result.error ?? copy('importFailed'))
+      }
+
+      statusAt = 0
+    },
+    label: copy('importWeb').replace('{name}', target.host),
+    provider: 'pen',
+    tip: copy('importWebTip'),
+    workingLabel: copy('importWorking'),
+    workingTip: copy('workingTip')
+  }
+}
+
 registerDraftProvider('pen', async ({ text }) => {
+  const webImport = webImportTrigger(text)
+
+  if (webImport) {
+    return [importWebSuggestion(webImport)]
+  }
+
   if (!penTrigger(text)) {
     return []
   }
