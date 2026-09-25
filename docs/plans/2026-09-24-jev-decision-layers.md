@@ -143,7 +143,7 @@ ground rather than an unproven chain.
 **Why:** Transport concerns live in exactly one place so the nine call sites never reimplement retry or deadline handling. The SDK's own `RequestOptions.timeout` is per attempt with no total budget, which is why the outer deadline is this module's job.
 
 ### Task 4: Author the `decide()` policy tests, red [test]
-- [ ] status
+- [x] status
 **Objective:** A red suite pinning config precedence, acknowledgement keys, confidence derivation, and the never-raises guarantee.
 **Write-scope:** `tests/test_jev_config.py` (new)
 `tests/test_jev_decide.py` (new)
