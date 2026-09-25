@@ -1133,14 +1133,20 @@ def judge_goal(
             },
         )
 
+    jev_state: Dict[str, Any] = {
+        "goal": _truncate(goal, 2000),
+        "last_response": _truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
+        "background": background_block,
+        "current_time": current_time,
+    }
+    if contract is not None and not contract.is_empty():
+        jev_state["contract"] = _truncate(contract.render_block(), 2500)
+    if clean_subgoals:
+        jev_state["subgoals"] = clean_subgoals
+
     d = decide(
         "goal_judge",
-        state={
-            "goal": _truncate(goal, 2000),
-            "last_response": _truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
-            "background": background_block,
-            "current_time": current_time,
-        },
+        state=jev_state,
         questions=jev_questions,
     )
 

@@ -223,6 +223,37 @@ def test_goal_judge_unconfident_verdict_falls_back_to_call_llm(monkeypatch):
     assert verdict == "continue"
 
 
+def test_goal_judge_passes_contract_in_state(monkeypatch):
+    answers = {"verdict": _choice_answer("verdict", choice="done", confidence=0.9)}
+    decision = Decision(ok=True, answers=answers, status="ok", min_confidence=0.75)
+    mock_decide = MagicMock(return_value=decision)
+    mock_call_llm = MagicMock(return_value=_llm_response('{"verdict": "continue", "reason": "aux used"}'))
+    monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", mock_call_llm)
+
+    contract = goals.GoalContract(outcome="ship it", verification="tests pass")
+
+    goals.judge_goal("ship the feature", "I shipped it", contract=contract)
+
+    mock_decide.assert_called_once()
+    assert "contract" in mock_decide.call_args.kwargs["state"]
+
+
+def test_goal_judge_passes_subgoals_in_state(monkeypatch):
+    answers = {"verdict": _choice_answer("verdict", choice="done", confidence=0.9)}
+    decision = Decision(ok=True, answers=answers, status="ok", min_confidence=0.75)
+    mock_decide = MagicMock(return_value=decision)
+    mock_call_llm = MagicMock(return_value=_llm_response('{"verdict": "continue", "reason": "aux used"}'))
+    monkeypatch.setattr("agent.jev_decide.decide", mock_decide)
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", mock_call_llm)
+
+    goals.judge_goal("ship the feature", "I shipped it", subgoals=["x"])
+
+    mock_decide.assert_called_once()
+    state = mock_decide.call_args.kwargs["state"]
+    assert state["subgoals"] == ["x"]
+
+
 def test_draft_contract_calls_llm_never_decide(monkeypatch):
     mock_decide = MagicMock()
     mock_call_llm = MagicMock(return_value=_llm_response('{"verification": "tests pass"}'))

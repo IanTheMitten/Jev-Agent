@@ -300,6 +300,22 @@ Tasks 7-10 fan out.
 **Depends:** Task 6
 **Why:** All three questions resolve from one fixed state, so one round trip answers what would otherwise be two. The `draft_contract` exclusion is the concrete hazard Decision 1 was chosen to defuse.
 
+### Task 9a: Pass contract/subgoals into goal-judge Jev state
+- [x] status
+**Objective:** `judge_goal`'s Jev `state` includes `contract` and `subgoals` when present, so the goal judge sees the same context `draft_contract` produced.
+**Write-scope:** `hermes_cli/goals.py`, `tests/test_jev_sites_tier_a.py`
+**Origin:** Phase 2 gate oracle review — Task 9's brief omitted contract/subgoals from the Jev state passed to `decide("goal_judge", ...)`.
+**Anchors:** `def judge_goal(` @ `hermes_cli/goals.py:1006`; the `d = decide("goal_judge", state={...` block.
+**Steps:**
+1. Build the state as `jev_state`.
+2. When `contract is not None and not contract.is_empty()`, set `jev_state["contract"] = _truncate(contract.render_block(), 2500)`.
+3. When `clean_subgoals` is truthy, set `jev_state["subgoals"] = clean_subgoals`.
+4. Pass `state=jev_state` to `decide(...)`. State unchanged when neither is present.
+5. Add `test_goal_judge_passes_contract_in_state` and `test_goal_judge_passes_subgoals_in_state` to `tests/test_jev_sites_tier_a.py`.
+**Verify:** `.venv/bin/python -m pytest tests/test_jev_sites_tier_a.py -q -k goal && .venv/bin/python -m pytest tests/hermes_cli/test_goals.py tests/hermes_cli/test_goal_gates.py -q` — expected: both runs pass, 0 failures.
+**Forbidden:** do not touch `draft_contract`, `_parse_judge_response`, or the prompt templates.
+**Depends:** Task 9
+
 ### Task 10: Route the kanban estimator through Jev
 - [x] status
 **Objective:** `_run_estimate` gets complexity and a token magnitude from one Jev request, with `rationale` templated from the returned legend.
