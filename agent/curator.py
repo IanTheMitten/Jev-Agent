@@ -1652,34 +1652,79 @@ def run_curator_review(
                     "error": None,
                 }
             else:
-                # When pruning built-ins is enabled, the candidate list now
-                # includes bundled skills. Override the default "don't touch
-                # bundled" rule for them — but only archiving is permitted, and
-                # hub-installed skills remain strictly off-limits.
-                builtins_note = ""
-                if get_prune_builtins():
-                    builtins_note = (
-                        "\n\nPRUNE-BUILTINS MODE IS ON: bundled built-in skills "
-                        "ARE included in the candidate list below and MAY be "
-                        "archived for staleness/irrelevance, overriding hard "
-                        "rule #1 for bundled skills ONLY. Hub-installed skills "
-                        "remain strictly off-limits. Treat a stale built-in the "
-                        "same as a stale agent-created skill: archive it (never "
-                        "delete). It will be restored on `hermes update` only if "
-                        "the user explicitly restores it."
+                skip_review = False
+                try:
+                    gate_rows = skill_usage.curated_report()
+                except Exception:
+                    gate_rows = []
+                if gate_rows:
+                    from agent.jev_client import noul_question
+                    from agent.jev_decide import decide
+
+                    gate_state = [
+                        {
+                            "name": r["name"],
+                            "state": r["state"],
+                            "use_count": r.get("use_count", 0),
+                            "activity_count": r.get("activity_count", 0),
+                            "last_activity_at": r.get("last_activity_at") or "never",
+                        }
+                        for r in gate_rows
+                    ]
+                    d = decide(
+                        "curator_gate",
+                        state=gate_state,
+                        questions={
+                            "actionable": noul_question(
+                                "Is any of these skills worth archiving, "
+                                "consolidating, or patching right now?"
+                            )
+                        },
                     )
-                if dry_run:
-                    prompt = (
-                        f"{CURATOR_DRY_RUN_BANNER}\n\n"
-                        f"{CURATOR_REVIEW_PROMPT}{builtins_note}\n\n"
-                        f"{candidate_list}"
+                    if d.ok and d.confident("actionable") and d.answers["actionable"].noul < 0.5:
+                        skip_review = True
+
+                if skip_review:
+                    final_summary = (
+                        f"{prefix}{auto_summary}; llm: skipped (jev: nothing actionable)"
                     )
+                    llm_meta = {
+                        "final": "",
+                        "summary": "skipped (jev: nothing actionable)",
+                        "model": "",
+                        "provider": "",
+                        "tool_calls": [],
+                        "error": None,
+                    }
                 else:
-                    prompt = f"{CURATOR_REVIEW_PROMPT}{builtins_note}\n\n{candidate_list}"
-                llm_meta = _run_llm_review(prompt)
-                final_summary = (
-                    f"{prefix}{auto_summary}; llm: {llm_meta.get('summary', 'no change')}"
-                )
+                    # When pruning built-ins is enabled, the candidate list now
+                    # includes bundled skills. Override the default "don't touch
+                    # bundled" rule for them — but only archiving is permitted, and
+                    # hub-installed skills remain strictly off-limits.
+                    builtins_note = ""
+                    if get_prune_builtins():
+                        builtins_note = (
+                            "\n\nPRUNE-BUILTINS MODE IS ON: bundled built-in skills "
+                            "ARE included in the candidate list below and MAY be "
+                            "archived for staleness/irrelevance, overriding hard "
+                            "rule #1 for bundled skills ONLY. Hub-installed skills "
+                            "remain strictly off-limits. Treat a stale built-in the "
+                            "same as a stale agent-created skill: archive it (never "
+                            "delete). It will be restored on `hermes update` only if "
+                            "the user explicitly restores it."
+                        )
+                    if dry_run:
+                        prompt = (
+                            f"{CURATOR_DRY_RUN_BANNER}\n\n"
+                            f"{CURATOR_REVIEW_PROMPT}{builtins_note}\n\n"
+                            f"{candidate_list}"
+                        )
+                    else:
+                        prompt = f"{CURATOR_REVIEW_PROMPT}{builtins_note}\n\n{candidate_list}"
+                    llm_meta = _run_llm_review(prompt)
+                    final_summary = (
+                        f"{prefix}{auto_summary}; llm: {llm_meta.get('summary', 'no change')}"
+                    )
         except Exception as e:
             logger.debug("Curator LLM pass failed: %s", e, exc_info=True)
             final_summary = f"{prefix}{auto_summary}; llm: error ({e})"
