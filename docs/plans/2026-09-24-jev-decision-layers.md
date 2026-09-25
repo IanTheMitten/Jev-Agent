@@ -121,7 +121,7 @@ ground rather than an unproven chain.
 **Why:** C5 makes the port the riskiest code in the plan, so its tests are written against the recorded contract before any implementation can rationalize itself into passing.
 
 ### Task 3: Implement `agent/jev_client.py`
-- [ ] status
+- [x] status
 **Objective:** `tests/test_jev_contract.py` goes green against a real httpx-backed client with an outer deadline the SDK does not provide.
 **Write-scope:** `agent/jev_client.py` (new)
 **Read-context:** `tests/test_jev_contract.py` (from Task 2) — the committed contract; it wins on any disagreement
