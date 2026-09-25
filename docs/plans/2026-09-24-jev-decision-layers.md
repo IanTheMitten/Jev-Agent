@@ -98,7 +98,7 @@ ground rather than an unproven chain.
 **Why:** Nine tasks sit downstream of a hand-ported wire contract (C5). One live call now costs minutes and converts every later parser assumption into a recorded fact. Negative result is a valid outcome.
 
 ### Task 2: Author the `JevClient` transport and contract tests, red [test]
-- [ ] status
+- [x] status
 **Objective:** A red suite pinning the request body, header set, response parsing, retry rules, and outer deadline of the not-yet-written client.
 **Write-scope:** `tests/test_jev_contract.py` (new)
 **Read-context:** `tests/fixtures/jev/systemone_all_types.json` (from Task 1) — replay this body
