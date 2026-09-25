@@ -168,6 +168,7 @@ def show_status(args):
         "FAL": "FAL_KEY",
         "ElevenLabs": "ELEVENLABS_API_KEY",
         "GitHub": "GITHUB_TOKEN",
+        "Jev": "TYPESAFE_API_KEY",
     }
 
     def _resolve_env(env_ref) -> str:

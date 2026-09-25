@@ -3624,6 +3624,15 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "tool",
     },
+    "TYPESAFE_API_KEY": {
+        "description": "Jev (Typesafe) API key for the Jev decision layers",
+        "prompt": "Jev API key",
+        "url": "https://typesafe.ai",
+        "tools": ["jev decision layers"],
+        "password": True,
+        "category": "tool",
+        "advanced": True,
+    },
     "SEARXNG_URL": {
         "description": "URL of your SearXNG instance for free self-hosted web search",
         "prompt": "SearXNG URL (e.g. http://localhost:8080)",

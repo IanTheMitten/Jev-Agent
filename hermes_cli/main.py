@@ -10605,7 +10605,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
     {
         "acp", "approvals", "auth", "backup", "bundles", "checkpoints", "claw", "completion",
         "computer-use",
-        "config", "console", "cron", "curator", "dashboard", "serve", "debug", "doctor",
+        "config", "console", "cron", "curator", "jev", "dashboard", "serve", "debug", "doctor",
         "dump", "egress", "fallback", "gateway", "hooks", "import", "import-agent", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
@@ -11696,6 +11696,21 @@ def main():
         _register_curator_cli(curator_parser)
     except Exception as _exc:
         logging.getLogger(__name__).debug("curator CLI wiring failed: %s", _exc)
+
+    # =========================================================================
+    # jev command — Jev decision-layer key and per-site setup
+    # =========================================================================
+    jev_parser = subparsers.add_parser(
+        "jev",
+        help="Set up the Jev API key and decision sites — setup, status, test, on, off",
+        description=(
+            "Paste your Jev (Typesafe) API key, pick which decision sites route "
+            "through Jev, and toggle the global kill switch."
+        ),
+    )
+    from hermes_cli.jev_setup import register_cli as _register_jev_cli
+
+    _register_jev_cli(jev_parser)
 
     # =========================================================================
     # pets command — petdex animated mascots (CLI / TUI / desktop display)

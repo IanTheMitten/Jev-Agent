@@ -1,4 +1,53 @@
-> **Jev-Agent** is a fork of [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) that adds a decision layer named Jev: a small auxiliary model consulted at gate points across the agent (approval, curator, memory recall, kanban estimation, goal judging) so those calls degrade to safe defaults instead of blocking on the main model. See [`docs/jev-decision-layers.md`](docs/jev-decision-layers.md) for the full design.
+```
+     ██╗███████╗██╗   ██╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+     ██║██╔════╝██║   ██║      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+     ██║█████╗  ██║   ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
+██   ██║██╔══╝  ╚██╗ ██╔╝╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
+╚█████╔╝███████╗ ╚████╔╝       ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
+ ╚════╝ ╚══════╝  ╚═══╝        ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
+```
+
+**JEV-AGENT** is a fork of [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) that adds **Jev**, a decision layer for the agent's housekeeping calls. Hermes asks its main model many small yes/no questions: should this turn trigger a memory/skill review, is this shell command safe, is the goal done, should the curator run. Jev-Agent sends those questions to a small, fast Jev endpoint instead. The main model's tokens go to your task. If Jev is unreachable or unsure, each site falls back to stock Hermes behavior.
+
+Everything else is upstream Hermes Agent: same CLI, gateway, tools, skills and memory. With Jev switched off it behaves like stock Hermes. See [`docs/jev-decision-layers.md`](docs/jev-decision-layers.md) for what each decision site sends and how it falls back.
+
+### Set up Jev in one command
+
+```bash
+hermes jev            # paste key (masked), live-test it, pick decision sites
+hermes jev status     # key present? which sites are on?
+hermes jev test       # ping the Jev API with the saved key
+hermes jev off|on     # global kill switch, per-site choices kept
+```
+
+`hermes setup jev` runs the same flow, and Jev also appears as a section in the full `hermes setup` wizard. The key is stored in `~/.hermes/.env` like every other provider key (`TYPESAFE_API_KEY`), never in `config.yaml`. Sites that send content off-host (approval, background-review digests, Honcho memory) ask for an explicit acknowledgement before they turn on.
+
+### Token usage: Jev-Agent vs Hermes Agent
+
+Measured on 2026-09-25 with Ollama cloud models, 4 scenarios × 2 models × 2 reps per agent (32 headless runs). Each scenario is a 3-turn session. A metering proxy between the agent and Ollama logged every LLM call. Numbers are mean total tokens (prompt + completion) per session; the "review" column is the part spent on background memory/skill review forks.
+
+| Model | Scenario | Hermes total (review) | Jev-Agent total (review) | Change |
+|---|---|---|---|---|
+| `gpt-oss:120b-cloud` | chitchat | 101,395 (59,037) | 48,306 (0) | −52% |
+| `gpt-oss:120b-cloud` | coding | 202,132 (144,577) | 69,445 (0) | −66% |
+| `gpt-oss:120b-cloud` | preference | 79,121 (53,527) | 103,117 (77,703) | +30% |
+| `gpt-oss:120b-cloud` | risky shell | 106,386 (53,561) | 38,429 (0) | −64% |
+| `nemotron-3-super:cloud` | chitchat | 95,245 (53,800) | 24,299 (0) | −74% |
+| `nemotron-3-super:cloud` | coding | 249,767 (170,316) | 79,867 (0) | −68% |
+| `nemotron-3-super:cloud` | preference | 99,437 (70,090) | 92,049 (63,083) | −7% |
+| `nemotron-3-super:cloud` | risky shell | 109,499 (38,061) | 49,077 (0) | −55% |
+| **All** | | **1,042,981** | **504,587** | **−52%** |
+
+Almost all of the savings come from the background-review gate. Jev asked "did this turn contain anything worth saving?" before each review fork (48 decisions, ~0.5 s each, no failures). In chitchat, coding and risky-shell sessions it answered no (durable score 0.04–0.52), so no review fork ran. In the preference scenario, where the user asks the agent to remember facts about them, it answered yes (0.82–0.90) and the reviews ran as in stock Hermes. That is the intended behavior, and the preference rows are roughly even (the +30% is run-to-run variance in how many review calls the model made).
+
+How to read these numbers:
+
+- **Review triggers were lowered** so short sessions act like long ones: `memory.nudge_interval: 1` (stock default 10) and `skills.creation_nudge_interval: 3` (stock default 10). In real use reviews fire less often, so absolute savings per session are smaller; the ratio per skipped review is the same.
+- **Jev's own API usage is not counted.** Jev calls are billed on the Jev side and never reach the main model provider.
+- **Small sample.** 2 reps per cell; main-loop tokens vary between runs by up to ~2× (e.g. chitchat on `nemotron-3-super:cloud`), so treat single rows as rough.
+- **The approval guard was not exercised.** In the risky-shell scenario (`rm -rf`, `chmod -R 777`) neither agent made an approval-guard LLM call, so that row measures the review gate only.
+- 6 of 385 calls returned HTTP 500 from Ollama cloud during `gpt-oss:120b-cloud` coding runs (4 Hermes, 2 Jev-Agent); the runs still finished.
+- Baseline is stock Hermes at merge-base `863e313185`; both trees ran on the same host with the same models and config apart from the `auxiliary.*.jev` blocks.
 
 <p align="center">
   <img src="assets/banner.png" alt="Hermes Agent" width="100%">

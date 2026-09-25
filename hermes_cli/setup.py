@@ -2847,7 +2847,14 @@ SETUP_SECTIONS = [
     ("tools", "Tools", setup_tools),
     ("telemetry", "Shared Metrics", setup_telemetry),
     ("agent", "Agent Settings", setup_agent_settings),
+    ("jev", "Jev Decision Layers", lambda config: _setup_jev(config)),
 ]
+
+
+def _setup_jev(config: dict):
+    from hermes_cli.jev_setup import setup_jev
+
+    setup_jev(config)
 
 
 def _run_portal_one_shot(config: dict) -> None:
@@ -2946,6 +2953,7 @@ def run_setup_wizard(args):
       hermes setup tools     — just tool configuration
       hermes setup telemetry — just local shared metrics
       hermes setup agent     — just agent settings
+      hermes setup jev       — just the Jev API key and decision sites
     """
     from hermes_cli.config import is_managed, managed_error
     if is_managed():
