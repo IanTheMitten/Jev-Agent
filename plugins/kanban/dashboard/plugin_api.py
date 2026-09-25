@@ -1783,6 +1783,16 @@ def reassign_task_endpoint(
 # reliably, so we estimate tokens + a complexity band with a one-line why.
 # ---------------------------------------------------------------------------
 
+_TOKEN_BUCKETS = [8000, 25000, 50000, 100000, 200000, 400000]
+_TOKEN_RUBRIC = [
+    "under ten thousand tokens",
+    "about twenty-five thousand tokens",
+    "about fifty thousand tokens",
+    "about one hundred thousand tokens",
+    "about two hundred thousand tokens",
+    "over four hundred thousand tokens",
+]
+
 _ESTIMATE_SYSTEM_PROMPT = (
     "You estimate how much work an autonomous coding agent will spend on a "
     "kanban task. Given the task title and description, respond with STRICT "
@@ -1849,6 +1859,36 @@ def _run_estimate(title: str, body: Optional[str]) -> dict:
         f"Title: {_cap(title, 400)}\n\n"
         f"Description:\n{_cap(body, 4000) or '(none)'}"
     )
+
+    from agent.jev_client import choice_question, score_question
+    from agent.jev_decide import decide
+
+    d = decide(
+        "kanban_estimator",
+        state={"title": _cap(title, 400), "description": _cap(body, 4000) or "(none)"},
+        questions={
+            "complexity": choice_question(
+                "How much work is this task for an autonomous coding agent?",
+                {"S": "small and localized", "M": "multi-file", "L": "broad or ambiguous"},
+            ),
+            "tokens": score_question(
+                "How many total tokens will a realistic multi-turn agent run spend on this "
+                "task, including reading files, tool calls, edits and retries?",
+                _TOKEN_RUBRIC,
+            ),
+        },
+    )
+    if d.status != "disabled" and d.confident("complexity") and d.confident("tokens"):
+        complexity = d.answers["complexity"].choice
+        idx = round(d.answers["tokens"].score)
+        return {
+            "ok": True,
+            "complexity": complexity,
+            "est_tokens": _TOKEN_BUCKETS[idx],
+            "rationale": f"{complexity} complexity, {_TOKEN_RUBRIC[idx]} (rough estimate)",
+            "model": "jev",
+        }
+
     try:
         resp = call_llm(
             task="kanban_estimator",

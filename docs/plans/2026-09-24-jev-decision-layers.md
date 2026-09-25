@@ -300,7 +300,7 @@ Tasks 7-10 fan out.
 **Why:** All three questions resolve from one fixed state, so one round trip answers what would otherwise be two. The `draft_contract` exclusion is the concrete hazard Decision 1 was chosen to defuse.
 
 ### Task 10: Route the kanban estimator through Jev
-- [ ] status
+- [x] status
 **Objective:** `_run_estimate` gets complexity and a token magnitude from one Jev request, with `rationale` templated from the returned legend.
 **Write-scope:** `plugins/kanban/dashboard/plugin_api.py`
 **Read-context:** `plugins/kanban/dashboard/plugin_api.py:1829-1880` — the function and its result dict
