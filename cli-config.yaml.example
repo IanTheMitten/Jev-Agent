@@ -1718,3 +1718,52 @@ updates:
 #     command: "cat /run/user/1000/hermes-secrets.env"
 #     helper_timeout_seconds: 3
 #     override_existing: false             # .env/shell win by default
+
+# =============================================================================
+# Jev Decision Layers (Advanced — Experimental, Off by Default)
+# =============================================================================
+# Jev (api.typesafe.ai) is a third-party decision API that some auxiliary
+# call sites can consult instead of running a full LLM call or a blind
+# heuristic. Every site below ships disabled: nothing is sent to Jev until
+# BOTH auxiliary.jev.enabled and the matching per-task jev.enabled are true.
+# auxiliary.jev.enabled: false overrides every per-task flag regardless of
+# its own setting. TYPESAFE_API_KEY is read from the environment (the name
+# below is only the variable name, never the key itself) and is never
+# written to this file. See docs/jev-decision-layers.md for what each site
+# sends and what happens when Jev is unavailable or unsure.
+#
+# auxiliary:
+#   jev:
+#     enabled: true              # global; false overrides every per-task flag
+#     api_key_env: TYPESAFE_API_KEY
+#     base_url: https://api.typesafe.ai   # override for self-host/proxy
+#     model: null                # omit to inherit server default
+#     timeout: 2.0               # per attempt, seconds
+#     deadline: 5.0               # outer budget across all attempts
+#     max_retries: 1
+#   approval:
+#     jev:
+#       enabled: true
+#       min_confidence: 0.85
+#       i_understand_commands_leave_host: true
+#   monitor:
+#     jev: {enabled: true, min_confidence: 0.6}
+#   goal_judge:
+#     jev: {enabled: true, min_confidence: 0.75}
+#   kanban_estimator:
+#     jev: {enabled: true, min_confidence: 0.6}
+#   background_review_gate:
+#     jev:
+#       enabled: true
+#       min_confidence: 0.5
+#       i_understand_turn_digests_leave_host: true
+#   honcho_recall_gate:
+#     jev:
+#       enabled: true
+#       min_confidence: 0.5
+#       i_understand_memory_content_leaves_host: true
+#   # Reasoning-level bump is decided by honcho_recall_gate (same request); no separate key.
+#   honcho_dialectic_bailout:
+#     jev: {enabled: true, min_confidence: 0.6, i_understand_memory_content_leaves_host: true}
+#   curator_gate:
+#     jev: {enabled: true, min_confidence: 0.5}
